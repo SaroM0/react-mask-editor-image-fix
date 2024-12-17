@@ -20,168 +20,197 @@ export const MaskEditorDefaults = {
 }
 
 export const MaskEditor: React.FC<MaskEditorProps> = (props: MaskEditorProps) => {
-  const src = props.src;
-  const cursorSize = props.cursorSize ?? MaskEditorDefaults.cursorSize;
-  const maskColor = props.maskColor ?? MaskEditorDefaults.maskColor;
-  const maskBlendMode = props.maskBlendMode ?? MaskEditorDefaults.maskBlendMode;
-  const maskOpacity = props.maskOpacity ?? MaskEditorDefaults.maskOpacity;
+  const {
+    src,
+    cursorSize = MaskEditorDefaults.cursorSize,
+    maskColor = MaskEditorDefaults.maskColor,
+    maskBlendMode = MaskEditorDefaults.maskBlendMode,
+    maskOpacity = MaskEditorDefaults.maskOpacity
+  } = props;
 
   const canvas = React.useRef<HTMLCanvasElement|null>(null);
   const maskCanvas = React.useRef<HTMLCanvasElement|null>(null);
   const cursorCanvas = React.useRef<HTMLCanvasElement|null>(null);
+
   const [context, setContext] = React.useState<CanvasRenderingContext2D|null>(null);
   const [maskContext, setMaskContext] = React.useState<CanvasRenderingContext2D|null>(null);
   const [cursorContext, setCursorContext] = React.useState<CanvasRenderingContext2D|null>(null);
+
   const [size, setSize] = React.useState<{x: number, y: number}>({x: 256, y: 256})
 
+  // Inicializa el contexto base
   React.useLayoutEffect(() => {
     if (canvas.current && !context) {
-      const ctx = (canvas.current as HTMLCanvasElement).getContext("2d");
+      const ctx = canvas.current.getContext("2d");
       setContext(ctx);
     }
-  }, [canvas]);
+  }, [canvas, context]);
 
+  // Inicializa el contexto de la máscara
   React.useLayoutEffect(() => {
-    if (maskCanvas.current && !context) {
-      const ctx = (maskCanvas.current as HTMLCanvasElement).getContext("2d");
+    if (maskCanvas.current && !maskContext) {
+      const ctx = maskCanvas.current.getContext("2d");
       if (ctx) {
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = "#ffffff"; // La máscara inicia blanca
         ctx.fillRect(0, 0, size.x, size.y);
       }
       setMaskContext(ctx);
     }
-  }, [maskCanvas]);
+  }, [maskCanvas, maskContext, size]);
 
+  // Inicializa el contexto del cursor
   React.useLayoutEffect(() => {
-    if (cursorCanvas.current && !context) {
-      const ctx = (cursorCanvas.current as HTMLCanvasElement).getContext("2d");
+    if (cursorCanvas.current && !cursorContext) {
+      const ctx = cursorCanvas.current.getContext("2d");
       setCursorContext(ctx);
     }
-  }, [cursorCanvas]);
+  }, [cursorCanvas, cursorContext]);
 
+  // Carga la imagen base
   React.useEffect(() => {
     if (src && context) {
-      const img = new Image;
-      img.onload = evt => {
+      const img = new Image();
+      img.onload = () => {
         setSize({x: img.width, y: img.height});
-        context?.drawImage(img, 0, 0);
+        context.clearRect(0, 0, img.width, img.height);
+        context.drawImage(img, 0, 0);
       }
+      img.crossOrigin = "Anonymous";
       img.src = src;
     }
   }, [src, context]);
 
-  // Pass mask canvas up
+  // Pasa el maskCanvas hacia afuera
   React.useLayoutEffect(() => {
     if (props.canvasRef) {
       props.canvasRef.current = maskCanvas.current;
     }
-  }, [maskCanvas]);
+  }, [maskCanvas, props.canvasRef]);
 
+  // Evento para dibujar y actualizar el cursor
   React.useEffect(() => {
-    const listener = (evt: MouseEvent) => {
-      if (cursorContext) {
-        cursorContext.clearRect(0, 0, size.x, size.y);
+    const handleMouseMove = (evt: MouseEvent) => {
+      if (!cursorContext || !maskContext) return;
 
-        cursorContext.beginPath();
-        cursorContext.fillStyle = `${maskColor}88`;
-        cursorContext.strokeStyle = maskColor;
-        cursorContext.arc(evt.offsetX, evt.offsetY, cursorSize, 0, 360);
-        cursorContext.fill();
-        cursorContext.stroke();
-      }
-      if (maskContext && evt.buttons > 0) {
+      // Limpia el canvas del cursor
+      cursorContext.clearRect(0, 0, size.x, size.y);
+
+      // Dibuja el cursor
+      cursorContext.beginPath();
+      cursorContext.fillStyle = `${maskColor}88`;
+      cursorContext.strokeStyle = maskColor;
+      cursorContext.arc(evt.offsetX, evt.offsetY, cursorSize, 0, Math.PI * 2);
+      cursorContext.fill();
+      cursorContext.stroke();
+
+      // Si se está presionando un botón del ratón, pinta en el maskCanvas
+      if (evt.buttons > 0) {
         maskContext.beginPath();
+        // Usar otro color si es botón secundario o shift, si así se desea
         maskContext.fillStyle = (evt.buttons > 1 || evt.shiftKey) ? "#ffffff" : maskColor;
-        maskContext.arc(evt.offsetX, evt.offsetY, cursorSize, 0, 360);
+        maskContext.arc(evt.offsetX, evt.offsetY, cursorSize, 0, Math.PI * 2);
         maskContext.fill();
       }
-    }
-    const scrollListener = (evt: WheelEvent) => {
-      if (cursorContext) {
-        props.onCursorSizeChange(Math.max(0, cursorSize + (evt.deltaY > 0 ? 1 : -1)));
+    };
 
-        cursorContext.clearRect(0, 0, size.x, size.y);
+    const handleWheel = (evt: WheelEvent) => {
+      if (!cursorContext || !maskContext || !props.onCursorSizeChange) return;
 
-        cursorContext.beginPath();
-        cursorContext.fillStyle = `${maskColor}88`;
-        cursorContext.strokeStyle = maskColor;
-        cursorContext.arc(evt.offsetX, evt.offsetY, cursorSize, 0, 360);
-        cursorContext.fill();
-        cursorContext.stroke();
+      const newSize = Math.max(1, cursorSize + (evt.deltaY > 0 ? 1 : -1));
+      props.onCursorSizeChange(newSize);
 
-        evt.stopPropagation();
-        evt.preventDefault();
-      }
-    }
+      cursorContext.clearRect(0, 0, size.x, size.y);
+      cursorContext.beginPath();
+      cursorContext.fillStyle = `${maskColor}88`;
+      cursorContext.strokeStyle = maskColor;
+      cursorContext.arc(evt.offsetX, evt.offsetY, newSize, 0, Math.PI * 2);
+      cursorContext.fill();
+      cursorContext.stroke();
 
-    cursorCanvas.current?.addEventListener("mousemove", listener);
+      evt.stopPropagation();
+      evt.preventDefault();
+    };
+
+    const cnv = cursorCanvas.current;
+    cnv?.addEventListener("mousemove", handleMouseMove);
     if (props.onCursorSizeChange) {
-      cursorCanvas.current?.addEventListener("wheel", scrollListener);
+      cnv?.addEventListener("wheel", handleWheel, { passive: false });
     }
+
     return () => {
-      cursorCanvas.current?.removeEventListener("mousemove", listener);
+      cnv?.removeEventListener("mousemove", handleMouseMove);
       if (props.onCursorSizeChange) {
-        cursorCanvas.current?.removeEventListener("wheel", scrollListener);
+        cnv?.removeEventListener("wheel", handleWheel);
       }
-    }
-  }, [cursorContext, maskContext, cursorCanvas, cursorSize, maskColor, size]);
+    };
+  }, [cursorContext, maskContext, cursorCanvas, cursorSize, maskColor, size, props]);
 
+  // Ajustar la máscara cuando cambie el color
   const replaceMaskColor = React.useCallback((hexColor: string, invert: boolean) => {
-    const imageData = maskContext?.getImageData(0, 0, size.x, size.y);
+    if (!maskContext) return;
+    const imageData = maskContext.getImageData(0, 0, size.x, size.y);
     const color = hexToRgb(hexColor);
-    if (imageData) {
-      for (var i = 0; i < imageData?.data.length; i += 4) {
-        const pixelColor = ((imageData.data[i] === 255) != invert) ? [255, 255, 255] : color;
-        imageData.data[i] = pixelColor[0];
-        imageData.data[i + 1] = pixelColor[1];
-        imageData.data[i + 2] = pixelColor[2];
-        imageData.data[i + 3] = imageData.data[i + 3];
-      }
-      maskContext?.putImageData(imageData, 0, 0);
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const pixelColor = ((imageData.data[i] === 255) !== invert) ? [255, 255, 255] : color;
+      imageData.data[i] = pixelColor[0];
+      imageData.data[i + 1] = pixelColor[1];
+      imageData.data[i + 2] = pixelColor[2];
+      // Alfa permanece igual
     }
-  }, [maskContext]);
-  React.useEffect(() => replaceMaskColor(maskColor, false), [maskColor]);
+    maskContext.putImageData(imageData, 0, 0);
+  }, [maskContext, size]);
 
-  return <div className="react-mask-editor-outer">
-    <div
-      className="react-mask-editor-inner"
-      style={{
-        width: size.x,
-        height: size.y,
-      }}
-    >
-      <canvas
-        ref={canvas}
+  React.useEffect(() => {
+    replaceMaskColor(maskColor, false);
+  }, [maskColor, replaceMaskColor]);
+
+  return (
+    <div className="react-mask-editor-outer">
+      <div
+        className="react-mask-editor-inner"
         style={{
           width: size.x,
           height: size.y,
         }}
-        width={size.x}
-        height={size.y}
-        className="react-mask-editor-base-canvas"
-      />
-      <canvas
-        ref={maskCanvas}
-        width={size.x}
-        height={size.y}
-        style={{
-          width: size.x,
-          height: size.y,
-          opacity: maskOpacity,
-          mixBlendMode: maskBlendMode as any,
-        }}
-        className="react-mask-editor-mask-canvas"
-      />
-      <canvas
-        ref={cursorCanvas}
-        width={size.x}
-        height={size.y}
-        style={{
-          width: size.x,
-          height: size.y,
-        }}
-        className="react-mask-editor-cursor-canvas"
-      />
+      >
+        <div className="all-canvases" style={{ position: "relative", width: size.x, height: size.y }}>
+          <canvas
+            ref={canvas}
+            style={{
+              width: size.x,
+              height: size.y,
+              zIndex: 1,
+            }}
+            width={size.x}
+            height={size.y}
+            className="react-mask-editor-base-canvas"
+          />
+          <canvas
+            ref={maskCanvas}
+            width={size.x}
+            height={size.y}
+            style={{
+              width: size.x,
+              height: size.y,
+              opacity: maskOpacity,
+              mixBlendMode: maskBlendMode as any,
+              zIndex: 10,
+            }}
+            className="react-mask-editor-mask-canvas" // Asegúrate que esta clase se corresponda con .mask-canvas en el LESS, o ajusta el LESS.
+          />
+          <canvas
+            ref={cursorCanvas}
+            width={size.x}
+            height={size.y}
+            style={{
+              width: size.x,
+              height: size.y,
+              zIndex: 20,
+            }}
+            className="react-mask-editor-cursor-canvas" // Asegúrate que esta clase se corresponda con .cursor-canvas en el LESS, o ajusta el LESS.
+          />
+        </div>
+      </div>
     </div>
-  </div>
+  );
 }
